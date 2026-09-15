@@ -83,3 +83,28 @@ If the agent starts skipping tools or changing answers, CI goes red.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## CI note
+
+The intended GitHub Actions workflow is checked in as [`ci/github-actions.yml`](ci/github-actions.yml) (identical contents).
+
+A fine-grained PAT without the **Workflows** permission cannot create `.github/workflows/ci.yml` on this repo. To enable Actions:
+
+1. Grant the pushing token **Workflows: Read and write** (classic: `workflow` scope), or use the GitHub UI.
+2. Copy the file into place and push:
+
+```bash
+mkdir -p .github/workflows
+cp ci/github-actions.yml .github/workflows/ci.yml
+git add .github/workflows/ci.yml
+git commit -m "Add GitHub Actions CI workflow"
+git push
+```
+
+Until then, run the same checks locally:
+
+```bash
+pip install -e ".[dev]"
+pytest -q
+python evals/runner.py
+```
