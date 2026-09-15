@@ -1,0 +1,3 @@
+# Runtime: zero third-party dependencies (stdlib only).
+# Dev / CI:
+pytest>=8.0

@@ -1,0 +1,51 @@
+[
+  {
+    "id": "calc_simple",
+    "query": "What is 15 * 7?",
+    "expected_tools": ["calculator"],
+    "expected_answer": "105",
+    "answer_match": "exact"
+  },
+  {
+    "id": "weather_seattle",
+    "query": "What's the weather in Seattle?",
+    "expected_tools": ["weather"],
+    "expected_answer": "Seattle: 58°F, cloudy, light rain.",
+    "answer_match": "exact"
+  },
+  {
+    "id": "search_capital",
+    "query": "What is the capital of France?",
+    "expected_tools": ["search"],
+    "expected_answer": "Paris is the capital of France.",
+    "answer_match": "exact"
+  },
+  {
+    "id": "multi_search_then_calc",
+    "query": "Search for capital of Japan and calculate 2 + 2",
+    "expected_tools": ["search", "calculator"],
+    "expected_answer": "Tokyo is the capital of Japan. 4",
+    "answer_match": "exact"
+  },
+  {
+    "id": "population_double",
+    "query": "Find the population of Tokyo then multiply that by 2",
+    "expected_tools": ["search", "calculator"],
+    "expected_answer": "Tokyo has approximately 14 million people. Multiplied result: 28000000.",
+    "answer_match": "exact"
+  },
+  {
+    "id": "weather_and_calc",
+    "query": "What's the weather in Paris and what is 10 * 3?",
+    "expected_tools": ["weather", "calculator"],
+    "expected_answer": "Paris: 64°F, partly cloudy. 30",
+    "answer_match": "exact"
+  },
+  {
+    "id": "search_langgraph",
+    "query": "What is LangGraph?",
+    "expected_tools": ["search"],
+    "expected_answer": "LangGraph",
+    "answer_match": "contains"
+  }
+]
