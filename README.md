@@ -24,7 +24,7 @@ This repo is that slice.
 | `evals/golden_tasks.json` | Frozen tasks: expected tool sequence + answer |
 | `evals/runner.py` | Eval runner + markdown report |
 | `tests/` | Unit + golden tests (pytest fails on regression) |
-| `.github/workflows/ci.yml` | CI on Python 3.11 / 3.12 |
+| `ci/github-actions.yml` | GitHub Actions workflow mirror (copy to `.github/workflows/ci.yml` to enable) |
 
 ## Quickstart
 
