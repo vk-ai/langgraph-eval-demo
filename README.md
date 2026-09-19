@@ -67,12 +67,17 @@ Tasks in `evals/golden_tasks.json` assert:
 
 1. **Tool sequence** — exact ordered list (e.g. `["search", "calculator"]`)
 2. **Final answer** — `exact` or `contains` match
+3. **`max_tool_calls` budget** — fail the eval/CI if the agent exceeds the per-task tool-call budget (optional related `max_graph_steps` is also supported by the runner)
+
+This mirrors a common community wish for agent CI: catch runaway tool loops even when the answer string still looks fine (see EvalView-style `max_cost` / “same tool 47 times” stories on r/LangChain and DEV).
 
 ```bash
 pytest tests/test_eval.py -q
 ```
 
-If the agent starts skipping tools or changing answers, CI goes red.
+If the agent starts skipping tools, looping tools, or changing answers, CI goes red.
+
+> **Honesty:** stdlib LangGraph-*style* graph + mock tools only — not real LangGraph, LangSmith, or employer production eval infra.
 
 ## Design notes
 
