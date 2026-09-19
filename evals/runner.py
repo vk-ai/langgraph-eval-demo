@@ -1,7 +1,8 @@
 """Golden-task eval runner.
 
-Asserts expected tool sequence and final answer. Designed so pytest fails on
-regression when agent behavior drifts.
+Asserts expected tool sequence, final answer, and optional tool-call budgets.
+Designed so pytest fails on regression when agent behavior drifts (including
+runaway tool loops).
 """
 
 from __future__ import annotations
@@ -30,6 +31,9 @@ class GoldenTask:
     expected_tools: list[str]
     expected_answer: str
     answer_match: AnswerMatch = "exact"
+    # Budget gates (community: catch runaway tool loops in CI)
+    max_tool_calls: int | None = None
+    max_graph_steps: int | None = None  # optional related budget (graph invoke steps)
 
 
 @dataclass
@@ -39,10 +43,12 @@ class TaskResult:
     actual_answer: str | None
     tools_ok: bool
     answer_ok: bool
+    budget_ok: bool = True
+    budget_detail: str | None = None
 
     @property
     def passed(self) -> bool:
-        return self.tools_ok and self.answer_ok
+        return self.tools_ok and self.answer_ok and self.budget_ok
 
 
 def load_golden_tasks(path: Path | None = None) -> list[GoldenTask]:
@@ -61,6 +67,22 @@ def _match_answer(actual: str | None, expected: str, mode: AnswerMatch) -> bool:
     raise ValueError(f"Unknown answer_match: {mode}")
 
 
+def _check_budget(task: GoldenTask, actual_tools: list[str], result: dict[str, Any]) -> tuple[bool, str | None]:
+    if task.max_tool_calls is not None and len(actual_tools) > task.max_tool_calls:
+        return (
+            False,
+            f"tool_calls={len(actual_tools)} exceeds max_tool_calls={task.max_tool_calls}",
+        )
+    if task.max_graph_steps is not None:
+        steps = result.get("graph_steps")
+        if steps is not None and int(steps) > task.max_graph_steps:
+            return (
+                False,
+                f"graph_steps={steps} exceeds max_graph_steps={task.max_graph_steps}",
+            )
+    return True, None
+
+
 def evaluate_task(
     task: GoldenTask,
     agent_fn: Callable[[str], dict[str, Any]] | None = None,
@@ -71,12 +93,15 @@ def evaluate_task(
     actual_answer = result.get("final_answer")
     tools_ok = actual_tools == list(task.expected_tools)
     answer_ok = _match_answer(actual_answer, task.expected_answer, task.answer_match)
+    budget_ok, budget_detail = _check_budget(task, actual_tools, result)
     return TaskResult(
         task=task,
         actual_tools=actual_tools,
         actual_answer=actual_answer,
         tools_ok=tools_ok,
         answer_ok=answer_ok,
+        budget_ok=budget_ok,
+        budget_detail=budget_detail,
     )
 
 
@@ -99,6 +124,13 @@ def report(results: list[TaskResult]) -> str:
         lines.append(f"- query: {r.task.query!r}")
         lines.append(f"- tools expected: {r.task.expected_tools}")
         lines.append(f"- tools actual:   {r.actual_tools} ({'ok' if r.tools_ok else 'MISMATCH'})")
+        if r.task.max_tool_calls is not None:
+            lines.append(
+                f"- max_tool_calls: {r.task.max_tool_calls} "
+                f"(actual={len(r.actual_tools)}; {'ok' if r.budget_ok else 'OVER BUDGET'})"
+            )
+        if r.budget_detail and not r.budget_ok:
+            lines.append(f"- budget: {r.budget_detail}")
         lines.append(f"- answer expected ({r.task.answer_match}): {r.task.expected_answer!r}")
         lines.append(f"- answer actual: {r.actual_answer!r} ({'ok' if r.answer_ok else 'MISMATCH'})")
         lines.append("")
