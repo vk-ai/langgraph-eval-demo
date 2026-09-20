@@ -16,6 +16,8 @@ class ToolCall:
 class ToolResult:
     name: str
     output: str
+    args: dict[str, Any] = field(default_factory=dict)
+    args_digest: str = ""
 
 
 @dataclass
@@ -27,6 +29,7 @@ class AgentState:
     pending_tools: list[ToolCall] = field(default_factory=list)
     tool_trace: list[str] = field(default_factory=list)  # ordered tool names used
     tool_results: list[ToolResult] = field(default_factory=list)
+    tool_arg_digests: list[str] = field(default_factory=list)
     final_answer: str | None = None
     done: bool = False
     derived_from_search: bool = False
@@ -35,8 +38,15 @@ class AgentState:
         return {
             "query": self.query,
             "tool_trace": list(self.tool_trace),
+            "tool_arg_digests": list(self.tool_arg_digests),
             "final_answer": self.final_answer,
             "tool_results": [
-                {"name": r.name, "output": r.output} for r in self.tool_results
+                {
+                    "name": r.name,
+                    "output": r.output,
+                    "args": dict(r.args),
+                    "args_digest": r.args_digest,
+                }
+                for r in self.tool_results
             ],
         }

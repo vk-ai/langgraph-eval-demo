@@ -12,6 +12,7 @@ from typing import Any
 
 from .graph import END, StateGraph
 from .state import AgentState, ToolCall, ToolResult
+from .fixtures import tool_arg_digest
 from .tools import call_tool
 
 
@@ -182,8 +183,12 @@ def execute_tool_node(state: AgentState) -> AgentState:
             args["expression"] = "0"
 
     output = call_tool(call.name, args)
+    digest = tool_arg_digest(args)
     state.tool_trace.append(call.name)
-    state.tool_results.append(ToolResult(name=call.name, output=output))
+    state.tool_arg_digests.append(digest)
+    state.tool_results.append(
+        ToolResult(name=call.name, output=output, args=dict(args), args_digest=digest)
+    )
     state.messages.append(f"tool:{call.name}({args}) -> {output}")
     return state
 

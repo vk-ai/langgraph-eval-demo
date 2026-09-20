@@ -1,15 +1,16 @@
 """Golden-task eval runner.
 
-Asserts expected tool sequence, final answer, and optional tool-call budgets.
+Asserts expected tool sequence, final answer, optional tool-call budgets,
+optional ``expected_tool_args`` digests, and frozen tool-result fixtures.
 Designed so pytest fails on regression when agent behavior drifts (including
-runaway tool loops).
+runaway tool loops and arg/environment drift).
 """
 
 from __future__ import annotations
 
 import json
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Literal
 
@@ -20,6 +21,10 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from langgraph_eval_demo.agent import run_agent  # noqa: E402
+from langgraph_eval_demo.fixtures import (  # noqa: E402
+    load_catalog,
+    verify_against_fixture,
+)
 
 AnswerMatch = Literal["exact", "contains"]
 
@@ -34,6 +39,10 @@ class GoldenTask:
     # Budget gates (community: catch runaway tool loops in CI)
     max_tool_calls: int | None = None
     max_graph_steps: int | None = None  # optional related budget (graph invoke steps)
+    # Optional SHA-256 digests of resolved tool args (canonical sorted JSON)
+    expected_tool_args: list[str] | None = None
+    # When True (default), compare tool outputs to frozen fixtures when present
+    check_tool_fixtures: bool = True
 
 
 @dataclass
@@ -45,10 +54,21 @@ class TaskResult:
     answer_ok: bool
     budget_ok: bool = True
     budget_detail: str | None = None
+    args_ok: bool = True
+    args_detail: str | None = None
+    fixtures_ok: bool = True
+    fixtures_detail: str | None = None
+    actual_arg_digests: list[str] = field(default_factory=list)
 
     @property
     def passed(self) -> bool:
-        return self.tools_ok and self.answer_ok and self.budget_ok
+        return (
+            self.tools_ok
+            and self.answer_ok
+            and self.budget_ok
+            and self.args_ok
+            and self.fixtures_ok
+        )
 
 
 def load_golden_tasks(path: Path | None = None) -> list[GoldenTask]:
@@ -83,6 +103,37 @@ def _check_budget(task: GoldenTask, actual_tools: list[str], result: dict[str, A
     return True, None
 
 
+def _check_arg_digests(
+    task: GoldenTask, actual_digests: list[str]
+) -> tuple[bool, str | None]:
+    if task.expected_tool_args is None:
+        return True, None
+    expected = list(task.expected_tool_args)
+    if actual_digests == expected:
+        return True, None
+    return (
+        False,
+        f"tool_arg digests mismatch: expected={expected} actual={actual_digests}",
+    )
+
+
+def _check_fixtures(result: dict[str, Any], task: GoldenTask) -> tuple[bool, str | None]:
+    if not task.check_tool_fixtures:
+        return True, None
+    catalog = load_catalog()
+    details: list[str] = []
+    for tr in result.get("tool_results") or []:
+        name = tr.get("name") or ""
+        args = tr.get("args") or {}
+        output = tr.get("output") or ""
+        ok, detail = verify_against_fixture(name, args, output, catalog=catalog)
+        if not ok and detail:
+            details.append(detail)
+    if details:
+        return False, "; ".join(details)
+    return True, None
+
+
 def evaluate_task(
     task: GoldenTask,
     agent_fn: Callable[[str], dict[str, Any]] | None = None,
@@ -91,9 +142,12 @@ def evaluate_task(
     result = agent_fn(task.query)
     actual_tools = list(result.get("tool_trace") or [])
     actual_answer = result.get("final_answer")
+    actual_digests = list(result.get("tool_arg_digests") or [])
     tools_ok = actual_tools == list(task.expected_tools)
     answer_ok = _match_answer(actual_answer, task.expected_answer, task.answer_match)
     budget_ok, budget_detail = _check_budget(task, actual_tools, result)
+    args_ok, args_detail = _check_arg_digests(task, actual_digests)
+    fixtures_ok, fixtures_detail = _check_fixtures(result, task)
     return TaskResult(
         task=task,
         actual_tools=actual_tools,
@@ -102,6 +156,11 @@ def evaluate_task(
         answer_ok=answer_ok,
         budget_ok=budget_ok,
         budget_detail=budget_detail,
+        args_ok=args_ok,
+        args_detail=args_detail,
+        fixtures_ok=fixtures_ok,
+        fixtures_detail=fixtures_detail,
+        actual_arg_digests=actual_digests,
     )
 
 
@@ -131,6 +190,15 @@ def report(results: list[TaskResult]) -> str:
             )
         if r.budget_detail and not r.budget_ok:
             lines.append(f"- budget: {r.budget_detail}")
+        if r.task.expected_tool_args is not None:
+            lines.append(
+                f"- tool_arg digests: {'ok' if r.args_ok else 'MISMATCH'} "
+                f"(expected={r.task.expected_tool_args} actual={r.actual_arg_digests})"
+            )
+        if r.args_detail and not r.args_ok:
+            lines.append(f"- args: {r.args_detail}")
+        if not r.fixtures_ok:
+            lines.append(f"- fixtures: {r.fixtures_detail}")
         lines.append(f"- answer expected ({r.task.answer_match}): {r.task.expected_answer!r}")
         lines.append(f"- answer actual: {r.actual_answer!r} ({'ok' if r.answer_ok else 'MISMATCH'})")
         lines.append("")
