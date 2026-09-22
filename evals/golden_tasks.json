@@ -5,7 +5,10 @@
     "expected_tools": ["calculator"],
     "expected_answer": "105",
     "answer_match": "exact",
-    "max_tool_calls": 1
+    "max_tool_calls": 1,
+    "expected_tool_args": [
+      "468ccb08daabbea0923e14a2cdbb6d6efc27976b748a8923ce844d458a2e97f6"
+    ]
   },
   {
     "id": "weather_seattle",
@@ -13,7 +16,10 @@
     "expected_tools": ["weather"],
     "expected_answer": "Seattle: 58°F, cloudy, light rain.",
     "answer_match": "exact",
-    "max_tool_calls": 1
+    "max_tool_calls": 1,
+    "expected_tool_args": [
+      "48ca5abd632f92191db1e1a7ffdd3e1fdada50a99f7ea459a86cdb2898012650"
+    ]
   },
   {
     "id": "search_capital",
@@ -21,7 +27,10 @@
     "expected_tools": ["search"],
     "expected_answer": "Paris is the capital of France.",
     "answer_match": "exact",
-    "max_tool_calls": 1
+    "max_tool_calls": 1,
+    "expected_tool_args": [
+      "fc0e1b1e298dd6ff432973c879b10732c108176ddcc42eac8e35b0cdec48197b"
+    ]
   },
   {
     "id": "multi_search_then_calc",
@@ -29,7 +38,11 @@
     "expected_tools": ["search", "calculator"],
     "expected_answer": "Tokyo is the capital of Japan. 4",
     "answer_match": "exact",
-    "max_tool_calls": 2
+    "max_tool_calls": 2,
+    "expected_tool_args": [
+      "27b7b6dc48ea857eed405abcbed526ee22a1634923e81095bb455d8ec1137a9f",
+      "a00c3097b189a6e2e86c68cba11bc64daab20e46b8142c4b4c97bff21424a43b"
+    ]
   },
   {
     "id": "population_double",
@@ -37,7 +50,11 @@
     "expected_tools": ["search", "calculator"],
     "expected_answer": "Tokyo has approximately 14 million people. Multiplied result: 28000000.",
     "answer_match": "exact",
-    "max_tool_calls": 2
+    "max_tool_calls": 2,
+    "expected_tool_args": [
+      "b7bd760c391ef61f20a1989c9dd75f4ea6952e6ed7a6dca7c3ecd07491a309e9",
+      "ee04649221b7060e85f3051c01ea86ada6eb1265c8baeee31b537de8ec6b6048"
+    ]
   },
   {
     "id": "weather_and_calc",
@@ -45,7 +62,11 @@
     "expected_tools": ["weather", "calculator"],
     "expected_answer": "Paris: 64°F, partly cloudy. 30",
     "answer_match": "exact",
-    "max_tool_calls": 2
+    "max_tool_calls": 2,
+    "expected_tool_args": [
+      "6e1e312d537bc71b5410b0599f5a508142149e13174c6ee0d1671658845bc67d",
+      "876ad3da27f951249bf4f9e69add2eeb86c66a1a45c5805f223ec68d3c6f3d0d"
+    ]
   },
   {
     "id": "search_langgraph",

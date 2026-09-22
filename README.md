@@ -20,8 +20,10 @@ This repo is that slice.
 |---|---|
 | `src/langgraph_eval_demo/graph.py` | Thin `StateGraph` / `END` / `compile().invoke()` (stdlib only) |
 | `src/langgraph_eval_demo/agent.py` | Plan → tools\* → respond agent |
-| `src/langgraph_eval_demo/tools.py` | Mock `search`, `calculator`, `weather` |
-| `evals/golden_tasks.json` | Frozen tasks: expected tool sequence + answer |
+| `src/langgraph_eval_demo/tools.py` | Mock `search`, `calculator`, `weather` (+ optional fixture replay) |
+| `src/langgraph_eval_demo/fixtures.py` | Arg digests + frozen tool-result catalog lookup |
+| `evals/tool_fixtures/catalog.json` | Record/replay mock tool outputs keyed by arg digest |
+| `evals/golden_tasks.json` | Frozen tasks: tool sequence + answer + optional arg digests |
 | `evals/runner.py` | Eval runner + markdown report |
 | `tests/` | Unit + golden tests (pytest fails on regression) |
 | `ci/github-actions.yml` | GitHub Actions workflow mirror (copy to `.github/workflows/ci.yml` to enable) |
@@ -68,8 +70,12 @@ Tasks in `evals/golden_tasks.json` assert:
 1. **Tool sequence** — exact ordered list (e.g. `["search", "calculator"]`)
 2. **Final answer** — `exact` or `contains` match
 3. **`max_tool_calls` budget** — fail the eval/CI if the agent exceeds the per-task tool-call budget (optional related `max_graph_steps` is also supported by the runner)
+4. **Optional `expected_tool_args` digests** — SHA-256 of canonicalized (sorted-JSON) resolved tool args; fail on mismatch
+5. **Frozen tool-result fixtures** — `evals/tool_fixtures/catalog.json` locks mock outputs; CI fails if a tool returns a different string for a known arg digest
 
-This mirrors a common community wish for agent CI: catch runaway tool loops even when the answer string still looks fine (see EvalView-style `max_cost` / “same tool 47 times” stories on r/LangChain and DEV).
+This mirrors a common community wish for agent CI: catch runaway tool loops **and** tool-environment drift (record/replay), even when the answer string still looks fine (see EvalView-style `max_cost` / “freeze the tool results as fixtures” stories on r/LangChain and DEV).
+
+Set `LANGGRAPH_EVAL_USE_FIXTURES=1` to replay catalog outputs from `call_tool` (optional; evals verify fixtures regardless).
 
 ```bash
 pytest tests/test_eval.py -q

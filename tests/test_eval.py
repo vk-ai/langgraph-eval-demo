@@ -126,3 +126,91 @@ def test_pytest_asserts_on_single_golden_regression():
     result = evaluate_task(broken)
     with pytest.raises(AssertionError):
         assert result.passed, "golden regression should fail"
+
+
+def test_expected_tool_args_digest_mismatch_fails():
+    """Wrong arg digest → eval fails even when tool names + answer match."""
+    task = GoldenTask(
+        id="regr_args",
+        query="What is 15 * 7?",
+        expected_tools=["calculator"],
+        expected_answer="105",
+        answer_match="exact",
+        max_tool_calls=1,
+        expected_tool_args=["deadbeef" * 8],
+        check_tool_fixtures=False,
+    )
+
+    def agent(query: str):
+        return {
+            "tool_trace": ["calculator"],
+            "tool_arg_digests": ["468ccb08daabbea0923e14a2cdbb6d6efc27976b748a8923ce844d458a2e97f6"],
+            "final_answer": "105",
+            "tool_results": [
+                {
+                    "name": "calculator",
+                    "output": "105",
+                    "args": {"expression": "15 * 7"},
+                    "args_digest": "468ccb08daabbea0923e14a2cdbb6d6efc27976b748a8923ce844d458a2e97f6",
+                }
+            ],
+        }
+
+    result = evaluate_task(task, agent_fn=agent)
+    assert result.passed is False
+    assert result.args_ok is False
+
+
+def test_fixture_output_mismatch_fails():
+    """Frozen fixture output drift → eval fails (record/replay gate)."""
+    from langgraph_eval_demo.fixtures import tool_arg_digest
+
+    args = {"expression": "15 * 7"}
+    digest = tool_arg_digest(args)
+    task = GoldenTask(
+        id="regr_fixture",
+        query="What is 15 * 7?",
+        expected_tools=["calculator"],
+        expected_answer="999",  # won't check answer path for fixture focus
+        answer_match="exact",
+        max_tool_calls=1,
+        check_tool_fixtures=True,
+    )
+
+    def agent(query: str):
+        return {
+            "tool_trace": ["calculator"],
+            "tool_arg_digests": [digest],
+            "final_answer": "999",
+            "tool_results": [
+                {
+                    "name": "calculator",
+                    "output": "NOT_THE_FIXTURE",  # catalog expects "105"
+                    "args": args,
+                    "args_digest": digest,
+                }
+            ],
+        }
+
+    result = evaluate_task(task, agent_fn=agent)
+    assert result.fixtures_ok is False
+    assert result.passed is False
+
+
+def test_tool_arg_digest_stable():
+    from langgraph_eval_demo.fixtures import tool_arg_digest
+
+    a = tool_arg_digest({"expression": "15 * 7"})
+    b = tool_arg_digest({"expression": "15 * 7"})
+    c = tool_arg_digest({"expression": "15*7"})
+    assert a == b
+    assert a != c
+    assert len(a) == 64
+
+
+def test_fixture_replay_matches_live():
+    from langgraph_eval_demo.tools import call_tool
+
+    live = call_tool("weather", {"city": "Seattle"}, use_fixtures=False)
+    frozen = call_tool("weather", {"city": "Seattle"}, use_fixtures=True)
+    assert live == frozen == "Seattle: 58°F, cloudy, light rain."

@@ -1,9 +1,15 @@
-"""Mock tools for offline demos (no network)."""
+"""Mock tools for offline demos (no network).
+
+Supports optional frozen fixtures under ``evals/tool_fixtures/``:
+- ``call_tool(..., use_fixtures=True)`` replays catalog outputs when present
+- otherwise runs the live mock (default), so demos stay readable
+"""
 
 from __future__ import annotations
 
 import ast
 import operator
+import os
 import re
 from typing import Any, Callable
 
@@ -99,8 +105,30 @@ TOOLS: dict[str, Callable[..., str]] = {
 }
 
 
-def call_tool(name: str, args: dict[str, Any]) -> str:
+def _fixtures_enabled(explicit: bool | None) -> bool:
+    if explicit is not None:
+        return explicit
+    return os.getenv("LANGGRAPH_EVAL_USE_FIXTURES", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
+def call_tool(
+    name: str,
+    args: dict[str, Any],
+    *,
+    use_fixtures: bool | None = None,
+) -> str:
+    """Dispatch a mock tool; optionally replay frozen fixture output."""
     if name not in TOOLS:
         return f"unknown tool: {name}"
+    if _fixtures_enabled(use_fixtures):
+        from .fixtures import lookup_fixture
+
+        frozen = lookup_fixture(name, args)
+        if frozen is not None:
+            return frozen
     fn = TOOLS[name]
     return fn(**args)

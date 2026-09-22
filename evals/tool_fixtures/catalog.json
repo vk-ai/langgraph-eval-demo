@@ -1,0 +1,98 @@
+{
+  "_meta": {
+    "description": "Frozen mock tool results for record/replay evals. OSS/learning only — not HTTP cassettes / LangSmith.",
+    "digest": "sha256 of sort_keys JSON args"
+  },
+  "tools": {
+    "calculator": [
+      {
+        "args": {
+          "expression": "15 * 7"
+        },
+        "args_digest": "468ccb08daabbea0923e14a2cdbb6d6efc27976b748a8923ce844d458a2e97f6",
+        "output": "105"
+      },
+      {
+        "args": {
+          "expression": "2 + 2"
+        },
+        "args_digest": "a00c3097b189a6e2e86c68cba11bc64daab20e46b8142c4b4c97bff21424a43b",
+        "output": "4"
+      },
+      {
+        "args": {
+          "expression": "14000000 * 2"
+        },
+        "args_digest": "ee04649221b7060e85f3051c01ea86ada6eb1265c8baeee31b537de8ec6b6048",
+        "output": "28000000"
+      },
+      {
+        "args": {
+          "expression": "10 * 3"
+        },
+        "args_digest": "876ad3da27f951249bf4f9e69add2eeb86c66a1a45c5805f223ec68d3c6f3d0d",
+        "output": "30"
+      },
+      {
+        "args": {
+          "expression": "3 * 3"
+        },
+        "args_digest": "fadebdaeda7c7a3293b7518d360b705f4942b16c629a5d5f92faba693ba3a8ec",
+        "output": "9"
+      }
+    ],
+    "weather": [
+      {
+        "args": {
+          "city": "Seattle"
+        },
+        "args_digest": "48ca5abd632f92191db1e1a7ffdd3e1fdada50a99f7ea459a86cdb2898012650",
+        "output": "Seattle: 58°F, cloudy, light rain."
+      },
+      {
+        "args": {
+          "city": "Paris"
+        },
+        "args_digest": "6e1e312d537bc71b5410b0599f5a508142149e13174c6ee0d1671658845bc67d",
+        "output": "Paris: 64°F, partly cloudy."
+      },
+      {
+        "args": {
+          "city": "Tokyo"
+        },
+        "args_digest": "40ed420b2bf58d0e736683466f50e24b4c902ccc93df74db423dc6cb6baa326a",
+        "output": "Tokyo: 72°F, clear skies."
+      }
+    ],
+    "search": [
+      {
+        "args": {
+          "query": "capital of france"
+        },
+        "args_digest": "fc0e1b1e298dd6ff432973c879b10732c108176ddcc42eac8e35b0cdec48197b",
+        "output": "Paris is the capital of France."
+      },
+      {
+        "args": {
+          "query": "capital of japan"
+        },
+        "args_digest": "27b7b6dc48ea857eed405abcbed526ee22a1634923e81095bb455d8ec1137a9f",
+        "output": "Tokyo is the capital of Japan."
+      },
+      {
+        "args": {
+          "query": "population of tokyo"
+        },
+        "args_digest": "b7bd760c391ef61f20a1989c9dd75f4ea6952e6ed7a6dca7c3ecd07491a309e9",
+        "output": "Tokyo has approximately 14 million people."
+      },
+      {
+        "args": {
+          "query": "langgraph"
+        },
+        "args_digest": "51948b5db904ec16f21f63494c11148275aa7ed7af8e8c66d0c3356caa00d5be",
+        "output": "LangGraph is a library for building stateful, multi-actor applications with LLMs."
+      }
+    ]
+  }
+}
