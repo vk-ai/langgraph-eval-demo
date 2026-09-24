@@ -3,6 +3,9 @@
 Uses a deterministic planner (no LLM / no network) so CI runs fully offline.
 The planner emits an ordered plan of tool calls from the user query, then the
 graph walks: plan → (execute_tool)* → respond.
+
+Default backend is the stdlib [langgraph-style] stand-in. Optional real
+LangGraph via LANGGRAPH_EVAL_USE_REAL + pip install '.[langgraph]'.
 """
 
 from __future__ import annotations
@@ -14,6 +17,11 @@ from .graph import END, StateGraph
 from .state import AgentState, ToolCall, ToolResult
 from .fixtures import tool_arg_digest
 from .tools import call_tool
+from .backend import (
+    backend_label,
+    fallback_reason,
+    wants_real_langgraph,
+)
 
 
 def _extract_city(text: str) -> str | None:
@@ -257,9 +265,40 @@ def build_agent_graph() -> StateGraph:
     return g
 
 
-def run_agent(query: str) -> dict[str, Any]:
-    """Run the agent graph and return a serializable result snapshot."""
+def _run_style(query: str) -> AgentState:
+    """Default offline path: thin stdlib StateGraph (LangGraph-*style*)."""
     graph = build_agent_graph().compile()
     state = AgentState(query=query)
-    final = graph.invoke(state)
-    return final.snapshot()
+    state.messages.append(f"{backend_label('langgraph-style')} using stdlib StateGraph")
+    return graph.invoke(state)
+
+
+def run_agent(query: str) -> dict[str, Any]:
+    """Run the agent graph and return a serializable result snapshot.
+
+    Default: stdlib LangGraph-*style* graph tagged ``[langgraph-style]``.
+    When ``LANGGRAPH_EVAL_USE_REAL=true`` and optional ``langgraph`` is installed,
+    uses the real package and tags ``[langgraph]``. Missing install or invoke
+    failures fall back to the style path (never crash).
+    """
+    reason = fallback_reason()
+    if wants_real_langgraph() and reason is None:
+        try:
+            from .langgraph_backend import run_with_real_langgraph
+
+            final = run_with_real_langgraph(query)
+            final.messages.insert(
+                0, f"{backend_label('langgraph')} using real langgraph.graph.StateGraph"
+            )
+            return final.snapshot(graph_mode="langgraph")
+        except Exception as exc:  # noqa: BLE001 — demo must not break default path
+            reason = (
+                f"LANGGRAPH_EVAL_USE_REAL=true but real LangGraph invoke failed "
+                f"({exc!s}); falling back to [langgraph-style]."
+            )
+
+    final = _run_style(query)
+    if reason:
+        final.messages.insert(0, reason)
+    return final.snapshot(graph_mode="langgraph-style")
+

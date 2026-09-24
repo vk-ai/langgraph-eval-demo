@@ -34,7 +34,8 @@ class AgentState:
     done: bool = False
     derived_from_search: bool = False
 
-    def snapshot(self) -> dict[str, Any]:
+    def snapshot(self, *, graph_mode: str = "langgraph-style") -> dict[str, Any]:
+        label = "[langgraph]" if graph_mode == "langgraph" else "[langgraph-style]"
         return {
             "query": self.query,
             "tool_trace": list(self.tool_trace),
@@ -49,4 +50,7 @@ class AgentState:
                 }
                 for r in self.tool_results
             ],
+            "graph_mode": graph_mode,
+            "backend_label": label,
+            "messages": list(self.messages),
         }
