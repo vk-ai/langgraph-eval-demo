@@ -19,7 +19,7 @@ This repo is that slice.
 | Piece | Role |
 |---|---|
 | `src/langgraph_eval_demo/graph.py` | Thin `StateGraph` / `END` / `compile().invoke()` (stdlib only) |
-| `src/langgraph_eval_demo/agent.py` | Plan → tools\* → respond agent |
+| `src/langgraph_eval_demo/agent.py` | Plan → tools\* → respond agent (+ optional HITL interrupt-lite) |
 | `src/langgraph_eval_demo/tools.py` | Mock `search`, `calculator`, `weather` (+ optional fixture replay) |
 | `src/langgraph_eval_demo/fixtures.py` | Arg digests + frozen tool-result catalog lookup |
 | `evals/tool_fixtures/catalog.json` | Record/replay mock tool outputs keyed by arg digest |
@@ -84,6 +84,39 @@ pytest tests/test_eval.py -q
 If the agent starts skipping tools, looping tools, or changing answers, CI goes red.
 
 > **Honesty:** stdlib LangGraph-*style* graph + mock tools only — not real LangGraph, LangSmith, or employer production eval infra.
+
+
+## HITL interrupt-lite (approve / reject)
+
+Community agents (LangGraph HITL / OpenAI Agents SDK) pause before side-effecting
+tools, bind the decision to the exact tool+args, and resume or abort. This demo
+teaches that **contract** in stdlib:
+
+1. `run_agent(query, approval_tools={"weather"})` pauses *before* executing a
+   flagged tool and returns `interrupted=True` + `pending_decision` (tool, args,
+   args digest).
+2. `resume_agent(snapshot, "approve" | "reject")` continues or aborts.
+3. Resume is **fail-closed** on digest mismatch (`expected_digest=`).
+
+```bash
+python examples/interrupt_demo.py --query "What's the weather in Seattle?"
+python examples/interrupt_demo.py --query "What's the weather in Seattle?" --approve
+python examples/interrupt_demo.py --query "What's the weather in Paris?" --reject
+pytest tests/test_interrupt.py -q
+```
+
+```text
+plan → tools* ──(flagged tool)──► pending_decision → END (paused)
+                     │
+                     ├── approve → execute → respond → END
+                     └── reject  → abort message → END
+```
+
+> **Honesty:** Stdlib pause/resume demo of the HITL *contract* — **not** LangGraph
+> `interrupt()`, not ApprovalNode, not durable checkpointers, not employer prod
+> approval infra. See [langgraph#8026](https://github.com/langchain-ai/langgraph/issues/8026),
+> [LangGraph HITL docs](https://docs.langchain.com/oss/langgraph/human-in-the-loop),
+> [OpenAI Agents SDK HITL](https://openai.github.io/openai-agents-python/human_in_the_loop/).
 
 ## Design notes
 
