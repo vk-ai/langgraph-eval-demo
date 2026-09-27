@@ -14,7 +14,7 @@ import re
 from typing import Any
 
 from .graph import END, StateGraph
-from .state import AgentState, ToolCall, ToolResult
+from .state import AgentState, PendingDecision, ToolCall, ToolResult
 from .fixtures import tool_arg_digest
 from .tools import call_tool
 from .backend import (
@@ -170,14 +170,9 @@ def route_after_plan(state: AgentState) -> str:
     return "respond"
 
 
-def execute_tool_node(state: AgentState) -> AgentState:
-    """Pop and run the next pending tool call."""
-    if not state.pending_tools:
-        return state
-    call = state.pending_tools.pop(0)
+def _resolve_tool_args(state: AgentState, call: ToolCall) -> dict[str, Any]:
+    """Resolve placeholders (e.g. __FROM_SEARCH__) before digest / approval / execute."""
     args = dict(call.args)
-
-    # Resolve placeholder that depends on prior search output
     if call.name == "calculator" and "__FROM_SEARCH__" in str(args.get("expression", "")):
         state.derived_from_search = True
         prior = next(
@@ -189,9 +184,68 @@ def execute_tool_node(state: AgentState) -> AgentState:
             args["expression"] = args["expression"].replace("__FROM_SEARCH__", num)
         else:
             args["expression"] = "0"
+    return args
 
-    output = call_tool(call.name, args)
+
+def execute_tool_node(state: AgentState) -> AgentState:
+    """Pop and run the next pending tool call (or pause for HITL interrupt-lite)."""
+    if not state.pending_tools:
+        return state
+
+    # Already interrupted — stay paused until resume()
+    if state.interrupted and state.pending_decision is not None:
+        return state
+
+    call = state.pending_tools[0]
+    args = _resolve_tool_args(state, call)
     digest = tool_arg_digest(args)
+
+    # HITL interrupt-lite: gate flagged tools behind approve/reject
+    if call.name in state.approval_tools:
+        pd = state.pending_decision
+        if pd is None or pd.status == "pending":
+            # First hit — pause before side effect; keep call on pending_tools
+            state.pending_decision = PendingDecision(
+                tool_name=call.name,
+                args=dict(args),
+                args_digest=digest,
+                status="pending",
+            )
+            # Store resolved args back so resume executes the same digest
+            call.args = dict(args)
+            state.interrupted = True
+            state.messages.append(
+                f"interrupt: awaiting approval for {call.name} digest={digest}"
+            )
+            return state
+        if pd.status == "rejected":
+            state.pending_tools.pop(0)
+            state.pending_decision = None
+            state.interrupted = False
+            state.final_answer = (
+                f"Rejected tool call `{call.name}` "
+                f"(digest={digest}); aborting remaining plan."
+            )
+            state.done = True
+            state.messages.append(f"reject:{call.name}")
+            return state
+        if pd.status == "approved":
+            # Fail closed: digest must still match the paused decision
+            if pd.args_digest != digest or pd.tool_name != call.name:
+                state.interrupted = True
+                state.final_answer = (
+                    "Resume failed closed: pending decision digest/tool mismatch."
+                )
+                state.done = True
+                state.messages.append("resume_mismatch")
+                return state
+            # Fall through to execute; clear pending gate
+            state.pending_decision = None
+            state.interrupted = False
+
+    # Execute
+    state.pending_tools.pop(0)
+    output = call_tool(call.name, args)
     state.tool_trace.append(call.name)
     state.tool_arg_digests.append(digest)
     state.tool_results.append(
@@ -202,6 +256,10 @@ def execute_tool_node(state: AgentState) -> AgentState:
 
 
 def route_after_tool(state: AgentState) -> str:
+    if state.interrupted:
+        return "end"
+    if state.done or state.final_answer is not None:
+        return "respond"
     if state.pending_tools:
         return "tools"
     return "respond"
@@ -259,30 +317,51 @@ def build_agent_graph() -> StateGraph:
     g.add_conditional_edges(
         "tools",
         route_after_tool,
-        {"tools": "tools", "respond": "respond"},
+        {"tools": "tools", "respond": "respond", "end": END},
     )
     g.add_edge("respond", END)
     return g
 
 
-def _run_style(query: str) -> AgentState:
+def _run_style(
+    query: str,
+    *,
+    approval_tools: frozenset[str] | set[str] | list[str] | None = None,
+) -> AgentState:
     """Default offline path: thin stdlib StateGraph (LangGraph-*style*)."""
     graph = build_agent_graph().compile()
-    state = AgentState(query=query)
+    state = AgentState(
+        query=query,
+        approval_tools=frozenset(approval_tools or ()),
+    )
     state.messages.append(f"{backend_label('langgraph-style')} using stdlib StateGraph")
     return graph.invoke(state)
 
 
-def run_agent(query: str) -> dict[str, Any]:
+def run_agent(
+    query: str,
+    *,
+    approval_tools: frozenset[str] | set[str] | list[str] | None = None,
+) -> dict[str, Any]:
     """Run the agent graph and return a serializable result snapshot.
 
     Default: stdlib LangGraph-*style* graph tagged ``[langgraph-style]``.
     When ``LANGGRAPH_EVAL_USE_REAL=true`` and optional ``langgraph`` is installed,
     uses the real package and tags ``[langgraph]``. Missing install or invoke
     failures fall back to the style path (never crash).
+
+    If ``approval_tools`` is set (e.g. ``{"weather"}``), the graph pauses
+    *before* executing those tools and returns ``interrupted=True`` with a
+    ``pending_decision``. Call :func:`resume_agent` to approve or reject.
+    HITL interrupt-lite always runs on the stdlib ``[langgraph-style]`` path.
     """
     reason = fallback_reason()
-    if wants_real_langgraph() and reason is None:
+    if approval_tools and wants_real_langgraph():
+        reason = (
+            "approval_tools (HITL interrupt-lite) requested; interrupt-lite is "
+            "stdlib-only, using [langgraph-style]."
+        )
+    elif wants_real_langgraph() and reason is None:
         try:
             from .langgraph_backend import run_with_real_langgraph
 
@@ -297,8 +376,93 @@ def run_agent(query: str) -> dict[str, Any]:
                 f"({exc!s}); falling back to [langgraph-style]."
             )
 
-    final = _run_style(query)
+    final = _run_style(query, approval_tools=approval_tools)
     if reason:
         final.messages.insert(0, reason)
     return final.snapshot(graph_mode="langgraph-style")
 
+
+def _state_from_snapshot(snap: dict[str, Any]) -> AgentState:
+    """Rehydrate AgentState from a snapshot (interrupt-lite resume path)."""
+    pending_tools = [
+        ToolCall(name=t["name"], args=dict(t.get("args") or {}))
+        for t in snap.get("pending_tools") or []
+    ]
+    tool_results = [
+        ToolResult(
+            name=r["name"],
+            output=r["output"],
+            args=dict(r.get("args") or {}),
+            args_digest=str(r.get("args_digest") or ""),
+        )
+        for r in snap.get("tool_results") or []
+    ]
+    pd_raw = snap.get("pending_decision")
+    pending_decision = PendingDecision.from_dict(pd_raw) if pd_raw else None
+    return AgentState(
+        query=str(snap.get("query") or ""),
+        messages=list(snap.get("messages") or []),
+        pending_tools=pending_tools,
+        tool_trace=list(snap.get("tool_trace") or []),
+        tool_results=tool_results,
+        tool_arg_digests=list(snap.get("tool_arg_digests") or []),
+        final_answer=snap.get("final_answer"),
+        done=bool(snap.get("done")),
+        derived_from_search=bool(snap.get("derived_from_search")),
+        approval_tools=frozenset(snap.get("approval_tools") or ()),
+        pending_decision=pending_decision,
+        interrupted=bool(snap.get("interrupted")),
+    )
+
+
+def resume_agent(
+    snapshot: dict[str, Any],
+    decision: str,
+    *,
+    expected_digest: str | None = None,
+) -> dict[str, Any]:
+    """Resume a paused (interrupted) agent with ``approve`` or ``reject``.
+
+    Fail-closed: if ``expected_digest`` is given (or the snapshot has a pending
+    digest) and the rehydrated pending tool digest no longer matches, abort.
+    """
+    decision = decision.strip().lower()
+    if decision not in {"approve", "approved", "reject", "rejected"}:
+        raise ValueError("decision must be 'approve' or 'reject'")
+
+    state = _state_from_snapshot(snapshot)
+    if not state.interrupted or state.pending_decision is None:
+        raise ValueError("snapshot is not interrupted / has no pending_decision")
+
+    if expected_digest is not None and state.pending_decision.args_digest != expected_digest:
+        state.final_answer = "Resume failed closed: expected_digest mismatch."
+        state.done = True
+        state.interrupted = False
+        return state.snapshot(graph_mode="langgraph-style")
+
+    if decision in {"approve", "approved"}:
+        state.pending_decision.status = "approved"
+        state.interrupted = False  # allow execute_tool_node to proceed
+    else:
+        state.pending_decision.status = "rejected"
+        state.interrupted = False
+
+    # Continue from tools node (pending call still at front of pending_tools)
+    graph = build_agent_graph().compile()
+    # Jump by invoking from a tiny wrapper: set entry via compiling full graph
+    # but seed state so plan is skipped — use tools as synthetic entry by
+    # calling execute path through a one-shot graph starting at tools.
+    from .graph import StateGraph as _SG
+
+    g = _SG(AgentState)
+    g.add_node("tools", execute_tool_node)
+    g.add_node("respond", respond_node)
+    g.set_entry_point("tools")
+    g.add_conditional_edges(
+        "tools",
+        route_after_tool,
+        {"tools": "tools", "respond": "respond", "end": END},
+    )
+    g.add_edge("respond", END)
+    final = g.compile().invoke(state)
+    return final.snapshot(graph_mode="langgraph-style")

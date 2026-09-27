@@ -57,7 +57,7 @@ def build_real_langgraph():
     g.add_conditional_edges(
         "tools",
         _wrap_router(route_after_tool),
-        {"tools": "tools", "respond": "respond"},
+        {"tools": "tools", "respond": "respond", "end": END},
     )
     g.add_edge("respond", END)
     return g.compile()
