@@ -7,6 +7,8 @@ def test_calculator_path():
     result = run_agent("What is 15 * 7?")
     assert result["tool_trace"] == ["calculator"]
     assert result["final_answer"] == "105"
+    assert result["backend_label"] == "[langgraph-style]"
+    assert result["graph_mode"] == "langgraph-style"
 
 
 def test_weather_path():

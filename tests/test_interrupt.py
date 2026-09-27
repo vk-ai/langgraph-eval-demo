@@ -87,3 +87,20 @@ def test_resume_requires_interrupted_snapshot():
     snap = run_agent("What is 2 + 2?")
     with pytest.raises(ValueError, match="not interrupted"):
         resume_agent(snap, "approve")
+
+
+def test_interrupt_snapshot_is_labeled_langgraph_style():
+    snap = run_agent("What's the weather in Seattle?", approval_tools={"weather"})
+    assert snap["interrupted"] is True
+    assert snap["backend_label"] == "[langgraph-style]"
+    assert snap["graph_mode"] == "langgraph-style"
+    resumed = resume_agent(snap, "approve")
+    assert resumed["backend_label"] == "[langgraph-style]"
+    assert resumed["interrupted"] is False
+
+
+def test_interrupt_with_use_real_env_stays_on_style_path(monkeypatch):
+    monkeypatch.setenv("LANGGRAPH_EVAL_USE_REAL", "true")
+    snap = run_agent("What's the weather in Seattle?", approval_tools={"weather"})
+    assert snap["interrupted"] is True
+    assert snap["backend_label"] == "[langgraph-style]"

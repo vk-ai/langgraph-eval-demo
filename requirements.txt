@@ -1,3 +1,4 @@
 # Runtime: zero third-party dependencies (stdlib only).
+# Optional real LangGraph: pip install '.[langgraph]'  (not required for pytest/CI)
 # Dev / CI:
 pytest>=8.0

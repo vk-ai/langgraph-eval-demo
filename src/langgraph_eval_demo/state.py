@@ -69,7 +69,8 @@ class AgentState:
     pending_decision: PendingDecision | None = None
     interrupted: bool = False
 
-    def snapshot(self) -> dict[str, Any]:
+    def snapshot(self, *, graph_mode: str = "langgraph-style") -> dict[str, Any]:
+        label = "[langgraph]" if graph_mode == "langgraph" else "[langgraph-style]"
         return {
             "query": self.query,
             "tool_trace": list(self.tool_trace),
@@ -94,5 +95,7 @@ class AgentState:
             "approval_tools": sorted(self.approval_tools),
             "done": self.done,
             "derived_from_search": self.derived_from_search,
+            "graph_mode": graph_mode,
+            "backend_label": label,
             "messages": list(self.messages),
         }

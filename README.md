@@ -2,7 +2,16 @@
 
 > **OSS / learning demo only.** This is a personal open-source teaching project by [vk-ai](https://github.com/vk-ai). It is **not** employer production software, is **not** affiliated with any employer, and must not be described as production agent infrastructure.
 
-Tiny **multi-step tool-calling agent** built on a thin LangGraph-style state graph (pure Python, zero runtime deps), plus a **golden-task eval harness** and **pytest** suite that fails on regression.
+```text
+╔══════════════════════════════════════════════════════════════════════════╗
+║  HONESTY BANNER                                                          ║
+║  Default backend: [langgraph-style] — a thin *stdlib* StateGraph         ║
+║  stand-in. This is NOT LangGraph, NOT LangSmith, and NOT employer        ║
+║  production eval / agent infra. Optional real LangGraph is opt-in only.  ║
+╚══════════════════════════════════════════════════════════════════════════╝
+```
+
+Tiny **multi-step tool-calling agent** built on a thin LangGraph-*style* state graph (pure Python, **zero required runtime deps**), plus a **golden-task eval harness** and **pytest** suite that fails on regression. An optional real-`langgraph` path exists behind an env flag for learners who want to compare APIs.
 
 ## Why
 
@@ -18,15 +27,17 @@ This repo is that slice.
 
 | Piece | Role |
 |---|---|
-| `src/langgraph_eval_demo/graph.py` | Thin `StateGraph` / `END` / `compile().invoke()` (stdlib only) |
-| `src/langgraph_eval_demo/agent.py` | Plan → tools\* → respond agent (+ optional HITL interrupt-lite) |
+| `src/langgraph_eval_demo/graph.py` | Thin `StateGraph` / `END` / `compile().invoke()` (stdlib only) — tagged `[langgraph-style]` |
+| `src/langgraph_eval_demo/langgraph_backend.py` | Optional real `langgraph` graph (same plan→tools→respond) — tagged `[langgraph]` |
+| `src/langgraph_eval_demo/backend.py` | Mode / label helpers (`graph_mode`, `backend_label`) |
+| `src/langgraph_eval_demo/agent.py` | Plan → tools\* → respond agent + `run_agent` router (+ optional HITL interrupt-lite) |
 | `src/langgraph_eval_demo/tools.py` | Mock `search`, `calculator`, `weather` (+ optional fixture replay) |
 | `src/langgraph_eval_demo/fixtures.py` | Arg digests + frozen tool-result catalog lookup |
 | `evals/tool_fixtures/catalog.json` | Record/replay mock tool outputs keyed by arg digest |
 | `evals/golden_tasks.json` | Frozen tasks: tool sequence + answer + optional arg digests |
 | `evals/runner.py` | Eval runner + markdown report |
-| `tests/` | Unit + golden tests (pytest fails on regression) |
-| `ci/github-actions.yml` | GitHub Actions workflow mirror (copy to `.github/workflows/ci.yml` to enable) |
+| `tests/` | Unit + golden tests (pytest fails on regression; no langgraph required) |
+| `.github/workflows/ci.yml` | GitHub Actions CI (`pip install -e ".[dev]"` + pytest; never installs real langgraph) |
 
 ## Quickstart
 
@@ -40,19 +51,44 @@ python examples/quickstart.py
 python evals/runner.py
 ```
 
-Example agent run:
+Example agent run (default offline path):
 
 ```text
+backend: [langgraph-style]  (mode=langgraph-style)
+
 Q: Find the population of Tokyo then multiply that by 2
-  tools:  ['search', 'calculator']
-  answer: Tokyo has approximately 14 million people. Multiplied result: 28000000.
+  backend: [langgraph-style]
+  tools:   ['search', 'calculator']
+  answer:  Tokyo has approximately 14 million people. Multiplied result: 28000000.
 ```
+
+### Optional real LangGraph (opt-in)
+
+The **default** path is offline and clearly labeled `[langgraph-style]` — a ~100-line stdlib stand-in. CI and `pytest` never require the real package.
+
+To attempt a real LangGraph `StateGraph`:
+
+1. Install the optional extra: `pip install '.[langgraph]'` (pins `langgraph>=0.2`)
+2. Set **`LANGGRAPH_EVAL_USE_REAL=true`** (default is unset / false)
+
+Successful real runs are labeled `[langgraph]` in the result snapshot (`graph_mode`, `backend_label`, and messages). If `langgraph` is missing or invoke fails, `run_agent` **falls back** to `[langgraph-style]` with a clear reason in `messages` — it does **not** crash.
+
+```bash
+pip install -e '.[langgraph]'
+LANGGRAPH_EVAL_USE_REAL=true python examples/quickstart.py
+```
+
+This optional path is for learning how the same plan→tools→respond shape looks on the real package. It is **not** a production LangGraph / LangSmith integration and makes no claims about any employer's systems.
 
 ## Graph shape
 
+Default (and CI) path uses the **stdlib stand-in** in `graph.py`. The optional real backend builds the same topology.
+
+ASCII:
+
 ```text
           ┌────────┐
-   start →│  plan  │─── no tools ──────────────┐
+   START →│  plan  │─── no tools ──────────────┐
           └───┬────┘                           │
               │ has tools                      ▼
               ▼                           ┌─────────┐
@@ -61,6 +97,18 @@ Q: Find the population of Tokyo then multiply that by 2
           └───┬───┘              │              ▲
               │ done             └──────────────┘
               └─────────────────────────────────┘
+```
+
+Mermaid (same topology; default runner is the stdlib `[langgraph-style]` stand-in):
+
+```mermaid
+flowchart TD
+  START([START]) --> plan[plan]
+  plan -->|has pending tools| tools[tools]
+  plan -->|no tools / done| respond[respond]
+  tools -->|more pending tools| tools
+  tools -->|done| respond
+  respond --> END([END])
 ```
 
 ## Golden eval (regression gate)
@@ -83,7 +131,7 @@ pytest tests/test_eval.py -q
 
 If the agent starts skipping tools, looping tools, or changing answers, CI goes red.
 
-> **Honesty:** stdlib LangGraph-*style* graph + mock tools only — not real LangGraph, LangSmith, or employer production eval infra.
+> **Honesty:** default path is a stdlib LangGraph-*style* graph + mock tools only — **not** real LangGraph, **not** LangSmith, **not** employer production eval infra. Snapshot field `backend_label` is `[langgraph-style]` unless you explicitly opt into real LangGraph.
 
 
 ## HITL interrupt-lite (approve / reject)
@@ -120,35 +168,26 @@ plan → tools* ──(flagged tool)──► pending_decision → END (paused)
 
 ## Design notes
 
-- **Prefer zero deps:** the graph is a ~100-line LangGraph-style stand-in so learners can read every line. Pinning `langgraph` is optional later; this demo deliberately stays offline-first.
+- **Prefer zero deps:** the graph is a ~100-line LangGraph-style stand-in so learners can read every line. Real `langgraph` is an **optional** extra (`pip install '.[langgraph]'`) behind `LANGGRAPH_EVAL_USE_REAL` — never a required dependency.
+- **Loud labels:** every `run_agent` snapshot includes `graph_mode` and `backend_label` (`[langgraph-style]` or `[langgraph]`).
 - **Deterministic planner:** no LLM in the loop — queries are mapped to tool plans with lightweight heuristics so golden tests are stable.
 - **Mock tools only:** search / calculator / weather never hit the network.
+- **CI stays offline:** `.github/workflows/ci.yml` installs `.[dev]` only; real LangGraph is never required.
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
 
-## CI note
+## CI
 
-The intended GitHub Actions workflow is checked in as [`ci/github-actions.yml`](ci/github-actions.yml) (identical contents).
+GitHub Actions workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (mirrored at [`ci/github-actions.yml`](ci/github-actions.yml)).
 
-A fine-grained PAT without the **Workflows** permission cannot create `.github/workflows/ci.yml` on this repo. To enable Actions:
-
-1. Grant the pushing token **Workflows: Read and write** (classic: `workflow` scope), or use the GitHub UI.
-2. Copy the file into place and push:
-
-```bash
-mkdir -p .github/workflows
-cp ci/github-actions.yml .github/workflows/ci.yml
-git add .github/workflows/ci.yml
-git commit -m "Add GitHub Actions CI workflow"
-git push
-```
-
-Until then, run the same checks locally:
+Runs on push/PR to `main`:
 
 ```bash
 pip install -e ".[dev]"
 pytest -q
 python evals/runner.py
 ```
+
+Fully offline — no network, no LangGraph package, no API keys.

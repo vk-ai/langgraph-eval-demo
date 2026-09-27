@@ -3,6 +3,9 @@
 Uses a deterministic planner (no LLM / no network) so CI runs fully offline.
 The planner emits an ordered plan of tool calls from the user query, then the
 graph walks: plan → (execute_tool)* → respond.
+
+Default backend is the stdlib [langgraph-style] stand-in. Optional real
+LangGraph via LANGGRAPH_EVAL_USE_REAL + pip install '.[langgraph]'.
 """
 
 from __future__ import annotations
@@ -14,6 +17,11 @@ from .graph import END, StateGraph
 from .state import AgentState, PendingDecision, ToolCall, ToolResult
 from .fixtures import tool_arg_digest
 from .tools import call_tool
+from .backend import (
+    backend_label,
+    fallback_reason,
+    wants_real_langgraph,
+)
 
 
 def _extract_city(text: str) -> str | None:
@@ -315,6 +323,21 @@ def build_agent_graph() -> StateGraph:
     return g
 
 
+def _run_style(
+    query: str,
+    *,
+    approval_tools: frozenset[str] | set[str] | list[str] | None = None,
+) -> AgentState:
+    """Default offline path: thin stdlib StateGraph (LangGraph-*style*)."""
+    graph = build_agent_graph().compile()
+    state = AgentState(
+        query=query,
+        approval_tools=frozenset(approval_tools or ()),
+    )
+    state.messages.append(f"{backend_label('langgraph-style')} using stdlib StateGraph")
+    return graph.invoke(state)
+
+
 def run_agent(
     query: str,
     *,
@@ -322,17 +345,41 @@ def run_agent(
 ) -> dict[str, Any]:
     """Run the agent graph and return a serializable result snapshot.
 
+    Default: stdlib LangGraph-*style* graph tagged ``[langgraph-style]``.
+    When ``LANGGRAPH_EVAL_USE_REAL=true`` and optional ``langgraph`` is installed,
+    uses the real package and tags ``[langgraph]``. Missing install or invoke
+    failures fall back to the style path (never crash).
+
     If ``approval_tools`` is set (e.g. ``{"weather"}``), the graph pauses
     *before* executing those tools and returns ``interrupted=True`` with a
     ``pending_decision``. Call :func:`resume_agent` to approve or reject.
+    HITL interrupt-lite always runs on the stdlib ``[langgraph-style]`` path.
     """
-    graph = build_agent_graph().compile()
-    state = AgentState(
-        query=query,
-        approval_tools=frozenset(approval_tools or ()),
-    )
-    final = graph.invoke(state)
-    return final.snapshot()
+    reason = fallback_reason()
+    if approval_tools and wants_real_langgraph():
+        reason = (
+            "approval_tools (HITL interrupt-lite) requested; interrupt-lite is "
+            "stdlib-only, using [langgraph-style]."
+        )
+    elif wants_real_langgraph() and reason is None:
+        try:
+            from .langgraph_backend import run_with_real_langgraph
+
+            final = run_with_real_langgraph(query)
+            final.messages.insert(
+                0, f"{backend_label('langgraph')} using real langgraph.graph.StateGraph"
+            )
+            return final.snapshot(graph_mode="langgraph")
+        except Exception as exc:  # noqa: BLE001 — demo must not break default path
+            reason = (
+                f"LANGGRAPH_EVAL_USE_REAL=true but real LangGraph invoke failed "
+                f"({exc!s}); falling back to [langgraph-style]."
+            )
+
+    final = _run_style(query, approval_tools=approval_tools)
+    if reason:
+        final.messages.insert(0, reason)
+    return final.snapshot(graph_mode="langgraph-style")
 
 
 def _state_from_snapshot(snap: dict[str, Any]) -> AgentState:
@@ -391,7 +438,7 @@ def resume_agent(
         state.final_answer = "Resume failed closed: expected_digest mismatch."
         state.done = True
         state.interrupted = False
-        return state.snapshot()
+        return state.snapshot(graph_mode="langgraph-style")
 
     if decision in {"approve", "approved"}:
         state.pending_decision.status = "approved"
@@ -418,4 +465,4 @@ def resume_agent(
     )
     g.add_edge("respond", END)
     final = g.compile().invoke(state)
-    return final.snapshot()
+    return final.snapshot(graph_mode="langgraph-style")
