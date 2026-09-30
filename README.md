@@ -34,7 +34,7 @@ This repo is that slice.
 | `src/langgraph_eval_demo/tools.py` | Mock `search`, `calculator`, `weather` (+ optional fixture replay) |
 | `src/langgraph_eval_demo/fixtures.py` | Arg digests + frozen tool-result catalog lookup |
 | `evals/tool_fixtures/catalog.json` | Record/replay mock tool outputs keyed by arg digest |
-| `evals/golden_tasks.json` | Frozen tasks: tool sequence + answer + optional arg digests |
+| `evals/golden_tasks.json` | Frozen tasks: tool sequence (+ optional `trajectory_match` / `must_precede`) + answer + optional arg digests |
 | `evals/runner.py` | Eval runner + markdown report |
 | `tests/` | Unit + golden tests (pytest fails on regression; no langgraph required) |
 | `.github/workflows/ci.yml` | GitHub Actions CI (`pip install -e ".[dev]"` + pytest; never installs real langgraph) |
@@ -115,7 +115,7 @@ flowchart TD
 
 Tasks in `evals/golden_tasks.json` assert:
 
-1. **Tool sequence** — exact ordered list (e.g. `["search", "calculator"]`)
+1. **Tool sequence** — exact ordered list by default (e.g. `["search", "calculator"]`), or a `trajectory_match` mode + `must_precede` rules (see below)
 2. **Final answer** — `exact` or `contains` match
 3. **`max_tool_calls` budget** — fail the eval/CI if the agent exceeds the per-task tool-call budget (optional related `max_graph_steps` is also supported by the runner)
 4. **Optional `expected_tool_args` digests** — SHA-256 of canonicalized (sorted-JSON) resolved tool args; fail on mismatch
@@ -133,6 +133,37 @@ If the agent starts skipping tools, looping tools, or changing answers, CI goes 
 
 > **Honesty:** default path is a stdlib LangGraph-*style* graph + mock tools only — **not** real LangGraph, **not** LangSmith, **not** employer production eval infra. Snapshot field `backend_label` is `[langgraph-style]` unless you explicitly opt into real LangGraph.
 
+
+### Trajectory match modes + precedence rules
+
+`strict` equality is often too rigid (two independent lookups can run in either order), while pure `unordered` is too loose (it happily accepts `calculator` *before* the `search` it depends on). Each golden task can opt into a mode plus causal rules:
+
+| Field | Values | Meaning |
+|---|---|---|
+| `trajectory_match` | `strict` (default) | same tools, same order, same counts |
+| | `unordered` | same tools and counts, any order |
+| | `subset` | agent called **only** tools from `expected_tools` (no extras) |
+| | `superset` | agent called **at least** every tool in `expected_tools` (extras ok) |
+| `must_precede` | `[["search", "calculator"]]` | if `calculator` is called, a `search` must come earlier (vacuous if `calculator` is never called) |
+
+Each result also reports a mode-aware **`trajectory_score`** in `[0, 1]` (informational, never gates CI): matched-prefix / len(expected) for `strict`; multiset coverage of the reference for `unordered` / `superset`; share of allowed calls for `subset`. In non-strict modes, `expected_tool_args` digests are compared as a multiset.
+
+```json
+{
+  "id": "population_search_before_calc",
+  "query": "Find the population of Paris then double it",
+  "expected_tools": ["calculator", "search"],
+  "trajectory_match": "unordered",
+  "must_precede": [["search", "calculator"]]
+}
+```
+
+```bash
+pytest tests/test_trajectory.py -q
+python evals/runner.py   # shows trajectory_match / trajectory_score / must_precede per task
+```
+
+> **Honesty:** a small stdlib re-implementation of the *idea* behind the deterministic trajectory evaluators in [agentevals](https://github.com/langchain-ai/agentevals) / [LangSmith trajectory evals](https://docs.langchain.com/langsmith/trajectory-evals), plus the precedence evaluator proposed on the [LangChain Forum](https://forum.langchain.com/t/proposal-solving-silent-failures-with-a-causal-precedence-evaluator-for-agent-trajectories/3351). It is **not** agentevals, not LangSmith, and has no LLM-as-judge.
 
 ## HITL interrupt-lite (approve / reject)
 

@@ -75,5 +75,58 @@
     "expected_answer": "LangGraph",
     "answer_match": "contains",
     "max_tool_calls": 1
+  },
+  {
+    "id": "weather_and_search_any_order",
+    "query": "Search for capital of France and what's the weather in Paris?",
+    "expected_tools": ["search", "weather"],
+    "trajectory_match": "unordered",
+    "expected_answer": "Paris: 64°F, partly cloudy. Paris is the capital of France.",
+    "answer_match": "exact",
+    "max_tool_calls": 2,
+    "expected_tool_args": [
+      "6e1e312d537bc71b5410b0599f5a508142149e13174c6ee0d1671658845bc67d",
+      "fc0e1b1e298dd6ff432973c879b10732c108176ddcc42eac8e35b0cdec48197b"
+    ]
+  },
+  {
+    "id": "population_search_before_calc",
+    "query": "Find the population of Paris then double it",
+    "expected_tools": ["calculator", "search"],
+    "trajectory_match": "unordered",
+    "must_precede": [["search", "calculator"]],
+    "expected_answer": "Paris has approximately 2.1 million people. Multiplied result: 4200000.",
+    "answer_match": "exact",
+    "max_tool_calls": 2,
+    "expected_tool_args": [
+      "1fe3884445f06a04c817fa1815cb82967a679a15d4aba24892960fe21be4cd4c",
+      "070db682b2c477d87c21beb7b8a81b38af8d466fa2ad3c676f45cca258058ad7"
+    ]
+  },
+  {
+    "id": "capital_allowed_tools_subset",
+    "query": "What is the capital of France?",
+    "expected_tools": ["search", "calculator"],
+    "trajectory_match": "subset",
+    "expected_answer": "Paris is the capital of France.",
+    "answer_match": "exact",
+    "max_tool_calls": 2,
+    "expected_tool_args": [
+      "fc0e1b1e298dd6ff432973c879b10732c108176ddcc42eac8e35b0cdec48197b"
+    ]
+  },
+  {
+    "id": "population_needs_calc_superset",
+    "query": "Find the population of Tokyo then multiply that by 2",
+    "expected_tools": ["calculator"],
+    "trajectory_match": "superset",
+    "must_precede": [["search", "calculator"]],
+    "expected_answer": "Tokyo has approximately 14 million people. Multiplied result: 28000000.",
+    "answer_match": "exact",
+    "max_tool_calls": 2,
+    "expected_tool_args": [
+      "b7bd760c391ef61f20a1989c9dd75f4ea6952e6ed7a6dca7c3ecd07491a309e9",
+      "ee04649221b7060e85f3051c01ea86ada6eb1265c8baeee31b537de8ec6b6048"
+    ]
   }
 ]
