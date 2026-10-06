@@ -35,7 +35,9 @@ This repo is that slice.
 | `src/langgraph_eval_demo/fixtures.py` | Arg digests + frozen tool-result catalog lookup |
 | `evals/tool_fixtures/catalog.json` | Record/replay mock tool outputs keyed by arg digest |
 | `evals/golden_tasks.json` | Frozen tasks: tool sequence (+ optional `trajectory_match` / `must_precede`) + answer + optional arg digests |
-| `evals/runner.py` | Eval runner + markdown report |
+| `evals/runner.py` | Eval runner + markdown report (`--repeat k` for pass^k) |
+| `evals/consistency.py` | pass@1 / mean@k / pass@k / pass^k report over repeated runs |
+| `src/langgraph_eval_demo/flaky.py` + `evals/flaky_tools.json` | Seeded flaky-tool mode (deterministic injected tool failures) |
 | `tests/` | Unit + golden tests (pytest fails on regression; no langgraph required) |
 | `.github/workflows/ci.yml` | GitHub Actions CI (`pip install -e ".[dev]"` + pytest; never installs real langgraph) |
 
@@ -197,6 +199,45 @@ plan → tools* ──(flagged tool)──► pending_decision → END (paused)
 > [LangGraph HITL docs](https://docs.langchain.com/oss/langgraph/human-in-the-loop),
 > [OpenAI Agents SDK HITL](https://openai.github.io/openai-agents-python/human_in_the_loop/).
 
+## pass^k consistency + seeded flaky tools
+
+pass@1 says the agent *can* solve a task. **pass^k** says it solves it *every
+time* over k tries. `--repeat k` runs every golden task k times and reports, per
+task and overall:
+
+| Metric | Meaning |
+|---|---|
+| `pass@1` | first run passed (what one CI run shows) |
+| `mean@k` | share of the k runs that passed |
+| `pass@k` | at least one run passed (capability) |
+| `pass^k` | **all** k runs passed (reliability) |
+| `gap` | `mean@k − pass^k`, the consistency gap |
+
+The planner and tools here are deterministic, so on their own every metric is
+1.00 and the gap is 0. To make the lesson visible, `evals/flaky_tools.json`
+turns on a **seeded flaky-tool mode**: `{"weather": {"fail_every": 3, "seed": 7}}`
+fails exactly one call in every 3 (the seed picks which one), and
+`{"fail_rate": p, "seed": s}` fails each call with seeded probability p. A failed
+call returns `"<tool> error: transient failure (injected)"` text. Results are
+bit-identical for a given seed.
+
+```bash
+python evals/runner.py --repeat 5                                   # gap 0.00
+python evals/runner.py --repeat 5 --flaky evals/flaky_tools.json    # pass@1 0.82, pass^5 0.45
+python evals/runner.py --repeat 3 --min-pass-hat-k 1.0              # CI floor on pass^k
+pytest tests/test_consistency.py -q
+```
+
+`--repeat 8 --k 4` uses the unbiased estimators (`C(c,k)/C(n,k)` for pass^k).
+CI gates on pass^3 = 1.0 for the deterministic agent and prints the flaky run
+for information only.
+
+> **Honesty:** a stdlib teaching version of the metric discussed in
+> [HF/IBM "Your Agent Aced the Task. Will It Do It Again?"](https://huggingface.co/blog/ibm-research/altk-evolve-consistency)
+> and [arXiv 2602.07150](https://arxiv.org/abs/2602.07150). The failures are
+> injected and seeded, not real upstream flakiness. Not tau-bench and not a
+> chaos framework.
+
 ## Design notes
 
 - **Prefer zero deps:** the graph is a ~100-line LangGraph-style stand-in so learners can read every line. Real `langgraph` is an **optional** extra (`pip install '.[langgraph]'`) behind `LANGGRAPH_EVAL_USE_REAL` — never a required dependency.
@@ -219,6 +260,8 @@ Runs on push/PR to `main`:
 pip install -e ".[dev]"
 pytest -q
 python evals/runner.py
+python evals/runner.py --repeat 3 --min-pass-hat-k 1.0
+python evals/runner.py --repeat 5 --flaky evals/flaky_tools.json   # informational
 ```
 
 Fully offline — no network, no LangGraph package, no API keys.

@@ -10,6 +10,7 @@ runaway tool loops and arg/environment drift).
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from collections import Counter
@@ -20,8 +21,9 @@ from typing import Any, Callable, Literal
 # Allow running as `python evals/runner.py` from repo root
 _ROOT = Path(__file__).resolve().parents[1]
 _SRC = _ROOT / "src"
-if str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
+for _p in (_SRC, _ROOT):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 from langgraph_eval_demo.agent import run_agent  # noqa: E402
 from langgraph_eval_demo.fixtures import (  # noqa: E402
@@ -329,10 +331,40 @@ def report(results: list[TaskResult]) -> str:
     return "\n".join(lines)
 
 
-def main() -> int:
-    results = run_eval()
-    print(report(results))
-    return 0 if all(r.passed for r in results) else 1
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Golden-task eval (+ optional pass^k consistency).")
+    parser.add_argument(
+        "--repeat", type=int, default=1,
+        help="run each golden task N times and print a pass^k consistency report",
+    )
+    parser.add_argument("--k", type=int, default=None, help="k for pass@k / pass^k (default: --repeat)")
+    parser.add_argument(
+        "--flaky", type=Path, default=None,
+        help="JSON flaky-tool config, e.g. evals/flaky_tools.json (seeded, deterministic)",
+    )
+    parser.add_argument(
+        "--min-pass-hat-k", type=float, default=None,
+        help="exit 1 if aggregate pass^k is below this floor (CI gate)",
+    )
+    args = parser.parse_args(argv)
+
+    if args.repeat <= 1 and args.flaky is None and args.min_pass_hat_k is None:
+        results = run_eval()
+        print(report(results))
+        return 0 if all(r.passed for r in results) else 1
+
+    from evals.consistency import consistency_report, run_consistency
+    from langgraph_eval_demo.flaky import load_flaky_config
+
+    flaky = load_flaky_config(args.flaky) if args.flaky else None
+    rep = run_consistency(max(args.repeat, 1), k=args.k, flaky=flaky)
+    print(consistency_report(rep))
+    if args.min_pass_hat_k is not None and rep.pass_hat_k < args.min_pass_hat_k:
+        print(
+            f"\nFAIL: pass^k={rep.pass_hat_k:.2f} below floor {args.min_pass_hat_k:.2f}"
+        )
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

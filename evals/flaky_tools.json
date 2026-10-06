@@ -1,0 +1,7 @@
+{
+  "_comment": "Seeded flaky-tool mode for pass^k demos. Deterministic for a given seed. OSS/learning only.",
+  "flaky_tools": {
+    "weather": {"fail_every": 3, "seed": 7},
+    "search": {"fail_rate": 0.15, "seed": 7}
+  }
+}
