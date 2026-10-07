@@ -3,6 +3,9 @@
 Supports optional frozen fixtures under ``evals/tool_fixtures/``:
 - ``call_tool(..., use_fixtures=True)`` replays catalog outputs when present
 - otherwise runs the live mock (default), so demos stay readable
+
+Optional seeded flaky-tool mode (``flaky.flaky_tools``) can inject
+deterministic transient failures for pass^k consistency evals.
 """
 
 from __future__ import annotations
@@ -124,6 +127,14 @@ def call_tool(
     """Dispatch a mock tool; optionally replay frozen fixture output."""
     if name not in TOOLS:
         return f"unknown tool: {name}"
+    # Seeded flaky-tool mode (consistency evals); no-op unless activated.
+    from .flaky import active_injector
+
+    injector = active_injector()
+    if injector is not None:
+        injected = injector.maybe_fail(name)
+        if injected is not None:
+            return injected
     if _fixtures_enabled(use_fixtures):
         from .fixtures import lookup_fixture
 

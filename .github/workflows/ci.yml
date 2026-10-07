@@ -26,3 +26,7 @@ jobs:
         run: pytest -q
       - name: Run golden eval CLI
         run: python evals/runner.py
+      - name: pass^k consistency gate (deterministic agent, k=3)
+        run: python evals/runner.py --repeat 3 --min-pass-hat-k 1.0
+      - name: pass^k demo with seeded flaky tools (informational, not gated)
+        run: python evals/runner.py --repeat 5 --flaky evals/flaky_tools.json
